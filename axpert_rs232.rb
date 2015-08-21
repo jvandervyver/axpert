@@ -37,6 +37,7 @@ class AxpertRS232
 
   private
 
+  # CRC calculation source: http://forums.aeva.asn.au/pip4048ms-inverter_topic4332_post53760.html#53760
   def calculate_crc(pin)
     crc, da = 0, 0
     for index in 0..(pin.length-1)
