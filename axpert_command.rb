@@ -1,6 +1,15 @@
+##
+# Simplify tieing a command issued to the Inverter and parsing the returned result
 class AxpertCommand
   require 'axpert_rs232'
 
+  ##
+  # Create a command
+  #
+  # Input:
+  #   command - The human readable ASCII command, use %{input} where input is expected
+  #   valid_values (optional) - A list of acceptable input values
+  #   <block> - A block used to parse the output of the command
   def initialize(command, valid_values = nil, &blk)
     raise ArgumentError.new("Expected in input block to deal with command result") unless block_given?
     @command = command.to_s.strip.chomp.upcase.freeze
@@ -9,6 +18,9 @@ class AxpertCommand
     @result_parser = blk
   end
 
+  ##
+  # Create an AxpertRS232 command which can be used to execute
+  # on the Inverter
   def command(arg = nil)
     cmd = @command.to_s.dup
     if @valid_values.nil?
@@ -22,6 +34,8 @@ class AxpertCommand
     ::AxpertRS232.from_ascii(cmd)
   end
 
+  ##
+  # Parse the command output returned from the inverter
   def parse_result(result)
     @result_parser.yield(::AxpertRS232.from_hex(result))
   rescue StandardError, ScriptError => err
