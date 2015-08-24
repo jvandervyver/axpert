@@ -27,16 +27,8 @@ class VoltronicDeviceOperation
       raise ::ArgumentError.new("Expected :parser to be a Proc or Lambda (#{err})")
     end
 
-    @validation = begin
-      parse = input.fetch(:validation, nil)
-      parse.nil? ? nil : ::Regexp.new(parse).freeze
-    rescue ::StandardError => err
-      err = "#{err.class.name.to_s} thrown; #{err.message.to_s}"
-      raise ::ArgumentError.new("Expected :validation to be a Regex or String representing a regular expression (#{err})")
-    end
-
-    @read_timeout = ::Integer(input.fetch(:serial_read_timeout_seconds, 2))
-    @write_timeout = ::Integer(input.fetch(:serial_write_timeout_seconds, 2))
+    @read_timeout = Integer(input.fetch(:serial_read_timeout_seconds, 2))
+    @write_timeout = Integer(input.fetch(:serial_write_timeout_seconds, 2))
 
     @termination_character = begin
       parse = input.fetch(:serial_termination_character, "\r").to_s
@@ -105,8 +97,7 @@ class VoltronicDeviceOperation
     input = lambda { input.to_s.chomp.freeze } unless input.is_a?(Proc)
     result = Object.new
     result.define_singleton_method(:_, &input)
-    result.method(:_).to_proc
-    result.freeze
+    result.method(:_).to_proc.freeze
   end
 
   RS232_PROTO = ::VoltronicRS232 # :nodoc
