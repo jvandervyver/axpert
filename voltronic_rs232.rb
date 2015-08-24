@@ -18,7 +18,7 @@ class VoltronicRS232
 
   def initialize(data) #:nodoc:
     data = data.to_s
-    parse_test = data.encode(Encoding.find('ASCII'), {invalid: :replace, undef: :replace, replace: ''})
+    parse_test = data.encode(::Encoding.find('ASCII'), {invalid: :replace, undef: :replace, replace: ''})
     data = ((data == parse_test) ? data.chomp : data.chars[0..-4].join)
     @crc = calculate_crc(data.bytes.to_a).map { |b| b.chr }.join.freeze
     @data = data.dup.freeze
