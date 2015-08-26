@@ -43,7 +43,6 @@ class VoltronicDeviceOperation
   # Issue a command to the device and parse the output result
   def issue_command(serial, *args)
     serial.read_timeout = -1 # Prevent locking on serial
-    serial.write_timeout = (@write_timeout * 1000) # Set timeout to specified seconds
 
     serial.write(command(*args).bytes)
     result = begin
@@ -57,12 +56,12 @@ class VoltronicDeviceOperation
         end
         parse += ch
         break if (@termination_character == ch)
-        raise ::IOError.new("IO read timeout reached, giving up") if (Time.now.to_i > timeout)
+        raise ::IOError.new("IO read timeout reached, giving up") if (Time.now.to_i > read_timeout)
       end
       parse
     end
 
-    parse_result(serial)
+    parse_result(result[0..-4])
   end
 
   ##
@@ -76,11 +75,14 @@ class VoltronicDeviceOperation
   # Parse the command output returned from the Voltronic device
   def parse_result(result)
     result = RS232_PROTO.new(result)
-    raise NAKReceivedError.new("Received NAK from device") if (@error_on_nak && ('NAK' == result.data.upcase))
+    if (@error_on_nak && ('(NAK' == result.data.upcase))
+      raise NAKReceivedError.new("Received NAK from device, this usually means an error occured, an invalid value was supplied or the command is not supported")
+    end
     @parser.yield(result)
-  rescue ::StandardError, ::ScriptError => err
-    err = "#{err.class.name.to_s} thrown; #{err.message.to_s}"
-    raise "Could not parse the result (#{err})"
+  #rescue ::StandardError, ::ScriptError => err
+  #  raise err if err.is_a?(NAKReceivedError)
+  #  err = "#{err.class.name.to_s} thrown; #{err.message.to_s}"
+  #  raise RS232ParseError.new("Could not parse the result, the output format may have changed (#{err})")
   end
 
   def to_s # :nodoc:
@@ -94,7 +96,12 @@ class VoltronicDeviceOperation
   private
 
   def as_lambda(input)
-    input = lambda { input.to_s.chomp.freeze } unless input.is_a?(Proc)
+    if !input.is_a?(Proc)
+      input = begin 
+        input_string = input.to_s.chomp.freeze
+        lambda { input_string.to_s.chomp.freeze }
+      end
+    end
     result = Object.new
     result.define_singleton_method(:_, &input)
     result.method(:_).to_proc.freeze
@@ -102,4 +109,5 @@ class VoltronicDeviceOperation
 
   RS232_PROTO = ::VoltronicRS232 # :nodoc
   class NAKReceivedError < ::RuntimeError; end # :nodoc:
+  class RS232ParseError < RuntimeError; end # :nodoc:
 end

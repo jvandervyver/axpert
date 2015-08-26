@@ -33,8 +33,9 @@ module AxpertCommands
   # Returns:
   #    # A String representing the CPU Firmware as a hexidecimal number
   #    "124004.10" # Example
+  #
   MAIN_CPU_FIRMWARE = OP.new(command: 'QVFW', parser: lambda do |r|
-    r.data[8..-1].split('.').map { |s| s.chars.map { |c| c.to_i(16).to_s }.flatten.join }.join('.')
+    r.data[8..-1].split('.').map { |s| s.chars.map { |c| Integer(c, 16).to_s }.flatten.join }.join('.').upcase
   end)
 
   ##
@@ -44,7 +45,7 @@ module AxpertCommands
   #    # A String representing the CPU Firmware as a hexidecimal number
   #    "124004.10" # Example
   OTHER_CPU_FIRMWARE = OP.new(command: 'QVFW2', parser: lambda do |r|
-    r.data[8..-1].split('.').map { |s| s.chars.map { |c| c.to_i(16).to_s }.flatten.join }.join('.')
+    r.data[8..-1].split('.').map { |s| s.chars.map { |c| Integer(c, 16).to_s }.flatten.join }.join('.').upcase
   end)
 
   ##
@@ -54,41 +55,32 @@ module AxpertCommands
   #    # A Hash containing device rating information
   #    { grid_voltage: 230.5, grid_current: 11.2, .. }
   DEVICE_RATING = OP.new(command: 'QPIRI', parser: lambda do |r|
-    r = r.data[1..-1].split(' ').map { |s| s = Float(s); (s%1==0) ? s.to_i : s }
-    { grid_voltage: r[0],
-      grid_current: r[1],
-      output_voltage: r[2],
-      output_frequency: r[3],
-      output_current: r[4],
-      output_va: r[5],
-      output_watts: r[6],
-      battery_voltage: r[7],
-      battery_recharge_voltage: r[8],
-      battery_under_voltage: r[9],
-      battery_bulk_charge_voltage: r[10],
-      battery_float_charge_voltage: r[11],
-      # Absorbent Glass Mat (AGM), Flooded Cell, User defined
-      battery_type: [:agm, :flooded, :user][r[12]],
-      maximum_ac_charge_current: r[13],
-      maximum_charge_current: r[14],
-      # Appliance mode, UPS mode
-      input_voltage_sensitivity: [:appliance, :ups][r[15]],
-      # Utility first, Solar first, Solar -> Battery -> Utility (SBU in manual)
-      output_source_priority: [:utility, :solar, :sbu][r[16]],
-      # Utility first, Solar first, Solar & Utility, Solar only
-      charger_source_priority: [:utility_first, :solar_first, :solar_and_utility, :solar_only][r[17]],
-      maximum_parallel_units: r[18],
-      # Grid tie, Off-Grid, Hybrid
-      device_type: ([:grid_tie, :off_grid] + ['']*8 + [:hybrid])[r[19]],
-      # Transformerless, Transformer
-      device_topology: [:transformerless, :transformer][r[20]],
-      # Single device, Parallel device, Phase 1 of 3, Phase 2 of 3, Phase 3 of 3
-      output_mode: [:single, :parallel, :phase1, :phase2, :phase3][r[21]],
-      battery_redischarge_voltage: r[22],
-      # Only one unit need report OK, All units must report OK
-      pv_parallel_ok: [:one, :all][r[23]],
-      # Charge current limited,  Charge current + load current
-      pv_power_balance: [:charge, :charge_and_load][r[24]], }
+    r = r.data[1..-1].split(' ')
+    { grid_voltage: Float(r[0]),
+      grid_current: Float(r[1]),
+      output_voltage: Float(r[2]),
+      output_frequency: Float(r[3]),
+      output_current: Float(r[4]),
+      output_va: Integer(r[5]),
+      output_watts: Integer(r[6]),
+      battery_voltage: Float(r[7]),
+      battery_recharge_voltage: Float(r[8]),
+      battery_under_voltage: Float(r[9]),
+      battery_bulk_charge_voltage: Float(r[10]),
+      battery_float_charge_voltage: Float(r[11]),
+      battery_type: ::AxpertConstants::BATTERY_TYPE[r[12]],
+      maximum_ac_charge_current: Integer(r[13]),
+      maximum_charge_current: Integer(r[14]),
+      input_voltage_sensitivity: CONS::INPUT_VOLTAGE_SENSITIVITY[r[15]],
+      output_source_priority: CONS::OUTPUT_SOURCE_PRIORITY[r[16]],
+      charger_source_priority: CONS::CHARGER_SOURCE_PRIORITY[r[17]],
+      maximum_parallel_units: Integer(r[18]),
+      device_type: CONS::DEVICE_TYPE[r[19]],
+      device_topology: CONS::DEVICE_TOPOLOGY[r[20]],
+      output_mode: CONS::OUTPUT_MODE[r[21]],
+      battery_redischarge_voltage: Float(r[22]),
+      pv_parallel_ok_mode: CONS::PV_PARALLEL_OK_MODE[r[23]],
+      pv_power_balance_mode: CONS::PV_POWER_BALANCE_MODE[r[24]] }
   end)
 
 
@@ -99,75 +91,109 @@ module AxpertCommands
   #    # A Hash containing device flag status as booleans
   #    {enable_buzzer: true/false, nable_bypass_to_utility_on_overload: true/false, ... }
   DEVICE_FLAGS = OP.new(command: 'QFLAG', parser: lambda do |r|
-    r = r.data[1..-1].chars.map { |s| ('E' == s.upcase) }
-    { enable_buzzer: r[0],
-      enable_bypass_to_utility_on_overload: r[1],
-      enable_power_saving: r[2],
-      enable_lcd_timeout_escape_to_default_page: r[3],
-      enable_overload_restart: r[4],
-      enable_over_temperature_restart: r[5],
-      enable_lcd_backlight: r[6],
-      enable_primary_source_interrupt_alarm: r[7],
-      enable_fault_code_recording: r[8], }
+    r = r.data[1..-1]
+    lookup = Hash.new { |_, k| raise "The device did not return the status of the flag '#{k}'" }
+    r.scan(/[E][a-z]*/).first.to_s[1..-1].to_s.chars.each { |e| lookup[e.upcase] = true }
+    r.scan(/[D][a-z]*/).first.to_s[1..-1].to_s.chars.each { |d| lookup[d.upcase] = false }
+    { enable_buzzer: lookup['A'],
+      enable_bypass_to_utility_on_overload: lookup['B'],
+      enable_power_saving: lookup['J'],
+      enable_lcd_timeout_escape_to_default_page: lookup['K'],
+      enable_overload_restart: lookup['U'],
+      enable_over_temperature_restart: lookup['V'],
+      enable_lcd_backlight: lookup['X'],
+      enable_primary_source_interrupt_alarm:  lookup['Y'],
+      enable_fault_code_recording: lookup['Z'] }
+  end)
+
+  ##
+  # The current device status
+  #
+  # Returns:
+  #    # A Hash containing device status information
+  #    { grid_voltage: 230.5, grid_current: 11.2, .. }
+  DEVICE_STATUS = OP.new(command: 'QPIGS', parser: lambda do |r|
+    r = r.data[1..-1].split(' ')
+    status = r[16].chars.map { |c| Boolean(c) }
+    { grid_voltage: Float(r[0]),
+      grid_frequency: Float(r[1]),
+      output_voltage: Float(r[2]),
+      output_frequency: Float(r[3]),
+      output_va: Integer(r[4]),
+      output_watts: Integer(r[5]),
+      output_load_percent: Integer(r[6]),
+      dc_bus_voltage: Integer(r[7]),
+      battery_voltage: Float(r[8]),
+      battery_charge_current: Float(r[9]),
+      battery_capacity_remaining: Integer(r[10]),
+      inverter_heatsink_celsius_temperature: Integer(r[11]),
+      pv_battery_input_current: Integer(r[12]),
+      pv_input_voltage: Float(r[13]),
+      solar_charge_controller_battery_voltage: Float(r[14]),
+      battery_discharge_current: Integer(r[15]),
+      add_sbu_priority_version: status[0],
+      configuration_changed: status[1],
+      solar_charge_controller_firmware_changed: status[2],
+      load_on: status[3],
+      battery_voltage_stable: status[4],
+      charger_enabled: status[5],
+      charging_from_solar_charge_controller: status[6],
+      charging_from_utility: status[7] }
   end)
 
   # Device mode
   #
   # Returns:
-  #    # The device mode as a Symbol
-  #    :power #=> Power on mode
-  #    :standby #=> Standby mode
-  #    :line #=> Line mode
-  #    :battery #=> Battery mode
-  #    :fault #=> Fault mode
-  DEVICE_MODE = OP.new(command: 'QMOD', parser: lambda do |r|
-    { 'P' => :power, # Power on
-      'S' => :standby,
-      'L' => :line,
-      'B' => :battery,
-      'F' => :fault, }[r.data[1..-1].upcase].freeze
-  end)
+  #    # A symbol denoting the device mode
+  #    See AxpertConstants::DEVICE_MODE for constants
+  DEVICE_MODE = OP.new(command: 'QMOD', parser: lambda { |r| CONS::DEVICE_MODE[r.data[1..-1].upcase] })
 
-  # Device warning status
+  ##
+  # Device warning status messages
+  #
+  # Returns:
+  #    # An Array of Hashes
+  #    # Each Hash has the format { description: String description, level: :none/:fault/:warning }
+  #    # The level is only :none if a reserved error was returned which may signify an update
+  #    # of the parser is needed
+  #    [{ description: 'Bus voltage is too high', level: :fault}, ..]
   DEVICE_WARNING_STATUS = OP.new(command: 'QPIWS', parser: lambda do |r|
-    r = r.data[1..-1].downcase.scan(/[a-z][0-9][0-9]?/)
-    r.map do |code|
-      case code
-        when 'a0'
-        when 'a1'
-        when 'a2'
-        when 'a3'
-        when 'a4'
-        when 'a5'
-        when 'a6'
-        when 'a7'
-        when 'a8'
-        when 'a9'
-        when 'a10'
-        when 'a11'
-        when 'a12'
-        when 'a13'
-        when 'a14'
-        when 'a15'
-        when 'a16'
-        when 'a17'
-        when 'a18'
-        when 'a19'
-        when 'a20'
-        when 'a21'
-        when 'a22'
-        when 'a23'
-        when 'a24'
-        when 'a25'
-        when 'a26'
-        when 'a27'
-        when 'a28'
-        when 'a29'
-        when 'a30'
-        else
-          raise "Unknown code #{code}"
-      end
-    end
+    r = r.data[1..-1].chars.map { |s| Boolean(s) }
+    parse = lambda { |desc, lvl = :none| { description: desc, level: lvl } }
+    errors = []
+    errors << parse.yield('Reserved') if r[0]
+    errors << parse.yield('Inverter fault', :fault) if r[1]
+    errors << parse.yield('Bus voltage is too high', :fault) if r[2]
+    errors << parse.yield('Bus voltage is too low', :fault) if r[3]
+    errors << parse.yield('Bus soft start failed ', :fault) if r[4]
+    errors << parse.yield('LINE_FAIL', :warning) if r[5]
+    errors << parse.yield('Output short circuited', :warning) if r[6]
+    errors << parse.yield('Inverter voltage too low', :fault) if r[7]
+    errors << parse.yield('Output voltage is too high', :fault) if r[8]
+    errors << parse.yield('Over temperature', (r[1] ? :fault : :warning)) if r[9]
+    errors << parse.yield('Fan is locked', (r[1] ? :fault : :warning)) if r[10]
+    errors << parse.yield('Battery voltage is too high', (r[1] ? :fault : :warning)) if r[11]
+    errors << parse.yield('Battery voltage is too low', 'Fault') if r[12]
+    errors << parse.yield('Reserved') if r[13]
+    errors << parse.yield('Battery under shutdown', :warning) if r[14]
+    errors << parse.yield('Reserved') if r[15]
+    errors << parse.yield('Overload', (r[1] ? :fault : :warning)) if r[16]
+    errors << parse.yield('EEPROM fault', :warning) if r[17]
+    errors << parse.yield('Inverter over current', :fault) if r[18]
+    errors << parse.yield('Inverter soft start failed', :fault) if r[19]
+    errors << parse.yield('Self test fail', :fault) if r[20]
+    errors << parse.yield('Over voltage on DC output of inverter', :fault) if r[21]
+    errors << parse.yield('Battery connection is open', :fault) if r[22]
+    errors << parse.yield('Current sensor failed ', :fault) if r[23]
+    errors << parse.yield('Battery short', :fault) if r[24]
+    errors << parse.yield('Power limit', :warning) if r[25]
+    errors << parse.yield('PV voltage high', :warning) if r[26]
+    errors << parse.yield('MPPT overload fault', :warning) if r[27]
+    errors << parse.yield('MPPT overload warning', :warning) if r[28]
+    errors << parse.yield('Battery too low to charge', :warning) if r[29]
+    errors << parse.yield('Reserved') if r[30]
+    errors << parse.yield('Reserved') if r[31]
+    errors
   end)
 
   ##
@@ -177,39 +203,50 @@ module AxpertCommands
   #    # A Hash containing device defaults
   #    { grid_voltage: 230.5, grid_current: 11.2, .. }
   DEFAULT_SETTINGS = OP.new(command: 'QDI', parser: lambda do |r|
-    r = r.data[1..-1].split(' ').map { |s| s = Float(s); (s%1==0) ? s.to_i : s }
-    { output_voltage: r[0],
-      output_frequency: r[1],
-      maximum_ac_charge_current: r[2],
-      battery_under_voltage: r[3],
-      battery_float_charge_voltage: r[4],
-      battery_bulk_charge_voltage: r[5],
-      battery_recharge_voltage: r[6],
-      maximum_charge_current: r[7],
-      # Appliance mode, UPS mode
-      input_voltage_sensitivity: [:appliance, :ups][r[8]],
-      # Utility first, Solar first, Solar -> Battery -> Utility (SBU in manual)
-      output_source_priority: [:utility, :solar, :sbu][r[9]],
-      # Utility first, Solar first, Solar & Utility, Solar only
-      charger_source_priority: [:utility_first, :solar_first, :solar_and_utility, :solar_only][r[10]],
-      # Absorbent Glass Mat (AGM), Flooded Cell, User defined
-      battery_type: [:agm, :flooded, :user][r[11]],
-      enable_buzzer: (0 == r[12]),
-      enable_power_saving: (0 == r[13]),
-      enable_overload_restart: (0 == r[14]),
-      enable_over_temperature_restart: (0 == r[15]),
-      enable_lcd_backlight:  (0 == r[16]),
-      enable_primary_source_interrupt_alarm: (0 == r[17]),
-      enable_fault_code_recording: (0 == r[18]),
-      enable_bypass_to_utility_on_overload: (0 == r[19]),
-      enable_lcd_timeout_escape_to_default_page: (0 == r[20]),
-      # Single device, Parallel device, Phase 1 of 3, Phase 2 of 3, Phase 3 of 3
-      output_mode: [:single, :parallel, :phase1, :phase2, :phase3][r[21]],
-      battery_redischarge_voltage: r[22],
-      # Only one unit need report OK, All units must report OK
-      pv_parallel_ok: [:one, :all][r[23]],
-      # Charge current limited,  Charge current + load current
-      pv_power_balance: [:charge, :charge_and_load][r[24]], }
+    r = r.data[1..-1].split(' ')
+    { output_voltage: Float(r[0]),
+      output_frequency: Float(r[1]),
+      maximum_ac_charge_current: Integer(r[2]),
+      battery_under_voltage: Float(r[3]),
+      battery_float_charge_voltage: Float(r[4]),
+      battery_bulk_charge_voltage: Float(r[5]),
+      battery_recharge_voltage: Float(r[6]),
+      maximum_charge_current: Integer(r[7]),
+      input_voltage_sensitivity: CONS::INPUT_VOLTAGE_SENSITIVITY[r[8]],
+      output_source_priority: CONS::OUTPUT_SOURCE_PRIORITY[r[9]],
+      charger_source_priority: CONS::CHARGER_SOURCE_PRIORITY[r[10]],
+      battery_type: ::AxpertConstants::BATTERY_TYPE[r[11]],
+      enable_buzzer: !Boolean(r[12]),
+      enable_power_saving: Boolean(r[13]),
+      enable_overload_restart: Boolean(r[14]),
+      enable_over_temperature_restart: Boolean(r[15]),
+      enable_lcd_backlight:  Boolean(r[16]),
+      enable_primary_source_interrupt_alarm: Boolean(r[17]),
+      enable_fault_code_recording: Boolean(r[18]),
+      enable_bypass_to_utility_on_overload: Boolean(r[19]),
+      enable_lcd_timeout_escape_to_default_page: Boolean(r[20]),
+      output_mode: CONS::OUTPUT_MODE[r[21]],
+      battery_redischarge_voltage: Float(r[22]),
+      pv_parallel_ok_mode: CONS::PV_PARALLEL_OK_MODE[r[23]],
+      pv_power_balance_mode: CONS::PV_POWER_BALANCE_MODE[r[24]] }
+  end)
+
+  ##
+  # All the possible input values for the charge current setting
+  #
+  # Returns:
+  #    [10, 20, 30] # => Array of Integers, example given
+  ACCEPTED_CHARGE_CURRENT_VALUES = OP.new(command: 'QMCHGCR', parser: lambda do |r|
+    r.data[1..-1].split(' ').map { |s| Integer(s) }
+  end)
+
+  ##
+  # All the possible input values for the utility charge current setting
+  #
+  # Returns:
+  #    [10, 20, 30] # => Array of Integers, example given
+  ACCEPTED_UTILITY_CHARGE_CURRENT_VALUES = OP.new(command: 'QMUCHGCR', parser: lambda do |r|
+    r.data[1..-1].split(' ').map { |s| Integer(s) }
   end)
 
   ##
@@ -218,19 +255,62 @@ module AxpertCommands
   # Returns:
   #    # A Boolean indicating if the device has undergone DSP bootstrap
   #    true # Example
-  DSP_BOOTSTRAP_STATUS = OP.new(command: 'QBOOT', parser: lambda { |r| (r.data == '(1') })
+  DSP_BOOTSTRAP_STATUS = OP.new(command: 'QBOOT', parser: lambda { |r| Boolean(r.data[1..-1]) })
 
   ##
   # Device parallel output mode status
   #
   # Returns:
-  #    # A Symbol indicating the current device output mode
-  #    :single # => Single device
-  #    :parallel # => Parallel device
-  #    :phase1 # => Phase 1 of 3
-  #    :phase2 # => Phase 2 of 3
-  #    :phase3 # => Phase 3 of 3
-  PARALLEL_OUTPUT_STATUS = OP.new(command: 'QOPM', parser: lambda { |r| [:single, :parallel, :phase1, :phase2, :phase3][Integer(r.data[1..-1])] })
+  #    # A symbol denoting the current device parallel output mode
+  #    See AxpertConstants::OUTPUT_MODE for constants
+  OUTPUT_MODE = OP.new(command: 'QOPM', parser: lambda { |r| CONS::OUTPUT_MODE[r.data[2..-1]] })
+
+  ##
+  # Parallel device information
+  #
+  # Input: (OPTIONAL, default = 0)
+  #    # Default of 0 seems to work for single unit mode
+  #    2 # => parallel_machine_number (Parallel mode only)
+  #
+  # Returns:
+  #    # A Hash containing parallel device status information
+  #    { grid_voltage: 230.5, grid_current: 11.2, .. }
+  PARALLEL_DEVICE_STATUS = OP.new(command: lambda { |i = 0| "QPGS#{Integer(i)}" }, parser: lambda do |r|
+    r = r.data[1..-1].split(' ')
+    status = r[19].chars
+    { parallel_number_exists: Boolean(r[0]),
+      serial_number: r[1],
+      device_mode: CONS::DEVICE_MODE[r[2]],
+      fault_code: CONS::FAULT_CODE[r[3]],
+      grid_voltage: Float(r[4]),
+      grid_frequency: Float(r[5]),
+      output_voltage: Float(r[6]),
+      output_frequency: Float(r[7]),
+      output_va: Integer(r[8]),
+      output_watts: Integer(r[9]),
+      load_percentage: Integer(r[10]),
+      battery_voltage: Float(r[11]),
+      battery_charge_current: Integer(r[12]),
+      battery_capacity: Integer(r[13]),
+      pv_input_voltage: Float(r[14]),
+      total_charge_current: Integer(r[15]),
+      total_output_va:  Integer(r[16]),
+      total_output_watt:  Integer(r[17]),
+      total_load_percentage: Integer(r[18]),
+      solar_charge_controller_enabled: Boolean(status[0]),
+      charging_from_utility: Boolean(status[1]),
+      charging_from_solar_charge_controller: Boolean(status[2]),
+      battery_status: [:normal, :under, :open][Integer("#{status[3]}#{status[4]}")],
+      line_status_ok: !Boolean(status[5]),
+      load_on: Boolean(status[6]),
+      configuration_changed: Boolean(status[7]),
+      output_mode:  CONS::OUTPUT_MODE[r[20]],
+      charger_source_priority: CONS::CHARGER_SOURCE_PRIORITY[r[21]],
+      maximum_charge_current: Integer(r[22]),
+      device_maximum_charge_current: Integer(r[23]),
+      pv_input_current: Integer(r[24]),
+      battery_discharge_current: Integer(r[25]) }
+  end)
 
   ##
   # Reset device to factory defaults
@@ -249,31 +329,19 @@ module AxpertCommands
   # Returns:
   #    # A Boolean indicating if the frequency was set succesfully
   #    true # Example
-  SET_OUTPUT_FREQUENCY = OP.new(command: lambda { |input| "F#{Integer(input).to_s}" }, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
+  SET_OUTPUT_FREQUENCY = OP.new(command: lambda { |input| "F#{Integer(input).to_s.rjust(2, '0')}" }, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
 
   ##
   # Set device output source priority
   #
   # Input:
-  #    :utility # => Utility first
-  #    :solar # => Solar first
-  #    :sbu # => Solar -> Battery -> Utility (SBU in manual)
+  #    # A symbol donating the output source priority setting
+  #    See AxpertConstants::OUTPUT_SOURCE_PRIORITY
   #
   # Returns:
   #    # A Boolean indicating if the output priority was set succesfully
   #    true # Example
-  SET_OUTPUT_PRIORITY = OP.new(command: lambda do |input|
-    "POP#{case input
-            when :utility
-              '00'
-            when :solar
-              '01'
-            when :sbu
-              '02'
-            else
-              raise ::ArgumentError.new("Unexpected value #{input}, valid inputs: [:utility, :solar, :sbu]")
-          end}"
-  end, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
+  SET_OUTPUT_SOURCE_PRIORITY = OP.new(command: lambda { |i| "POP#{CONS::OUTPUT_SOURCE_PRIORITY.key(i).to_s.rjust(2, '0')}" }, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
 
   ##
   # Set battery re-charge voltage
@@ -284,7 +352,7 @@ module AxpertCommands
   # Returns:
   #    # A Boolean indicating if the recharge voltage was successfully set
   #    true # Example
-  SET_BATTERY_RECHARGE_VOLTAGE = OP.new(command: lambda { |input| "PBCV#{Float(input).to_s}" }, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
+  SET_BATTERY_RECHARGE_VOLTAGE = OP.new(command: lambda { |input| "PBCV#{Float(input).to_s.rjust(4, '0')}" }, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
 
   ##
   # Set battery re-discharge voltage
@@ -295,17 +363,14 @@ module AxpertCommands
   # Returns:
   #    # A Boolean indicating if the re-discharge voltage was successfully set
   #    true # Example
-  SET_BATTERY_REDISCHARGE_VOLTAGE = OP.new(command: lambda { |input| "PBDV#{Float(input).to_s}" }, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
+  SET_BATTERY_REDISCHARGE_VOLTAGE = OP.new(command: lambda { |input| "PBDV#{Float(input).to_s.rjust(4, '0')}" }, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
 
   ##
   # Set device charger priority
   #
   # Input:
-  #    # (REQUIRED) Parameter 0 => mode - The input mode
-  #    :utility_first # => Utility first
-  #    :solar_first # => Solar first
-  #    :solar_and_utility # => Solar & Utility
-  #    :solar_only # => Solar only
+  #    # (REQUIRED) Parameter 0 => A symbol donating the charger source priority
+  #    See AxpertConstants::CHARGER_SOURCE_PRIORITY
   #
   #    # (OPTIONAL) Parameter 1 => parallel_machine_number (Parallel mode only)
   #    5 # => Do not pass in this value unless the device is running in parallel mode
@@ -313,65 +378,37 @@ module AxpertCommands
   # Returns:
   #    # A Boolean indicating if the device charger priority was set successfully
   #    true # Example
-  SET_DEVICE_CHARGER_PRIORITY = OP.new(command: lambda do |mode, parallel_machine_number = nil|
-    "#{(parallel_machine_number.nil? ? 'PCP' : "PPCP#{Integer(parallel_machine_number).to_s}")}#{case mode
-            when :utility_first
-              '00'
-            when :solar_first
-              '01'
-            when :solar_and_utility
-              '02'
-            when :solar_only
-              '03'
-            else
-              raise ::ArgumentError.new("Unexpected value #{mode}, valid inputs: [:utility_first, :solar_first, :solar_and_utility, :solar_only]")
-          end}"
+  SET_CHARGER_SOURCE_PRIORITY = OP.new(command: lambda do |mode, parallel_machine_number = nil|
+    if parallel_machine_number.nil?
+      "PPCP#{Integer(parallel_machine_number).to_s}#{CONS::CHARGER_SOURCE_PRIORITY.key(mode).to_s.rjust(2, '0')}"
+    else
+      "PCP#{CONS::CHARGER_SOURCE_PRIORITY.key(mode).to_s.rjust(2, '0')}"
+    end
   end, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
 
   ##
   # Set device input voltage sensitivity
   #
   # Input:
-  #    :appliance # => Appliance mode
-  #    :ups # => UPS mode
+  #    # A symbol denoting the input voltage sensitivity
+  #    See AxpertConstants::INPUT_VOLTAGE_SENSITIVITY
   #
   # Returns:
   #    # A Boolean indicating if the device input voltage sensitivity was set successfully
   #    true # Example
-  SET_INPUT_VOLTAGE_SENSITIVITY = OP.new(command: lambda do |input|
-    "PGR#{case input
-            when :appliance
-              '00'
-            when :ups
-              '01'
-            else
-              raise ::ArgumentError.new("Unexpected value #{input}, valid inputs: [:appliance, :ups]")
-          end}"
-  end, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
+  SET_INPUT_VOLTAGE_SENSITIVITY = OP.new(command: lambda { |i| "PGR#{CONS::INPUT_VOLTAGE_SENSITIVITY.key(i).to_s.rjust(2, '0')}" }, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
 
   ##
   # Set battery type
   #
   # Input:
-  #    :agm # => Absorbent Glass Mat (AGM)
-  #    :flooded # => Flooded Cell
-  #    :user # => User defined
+  #    # A symbol denoting the battery type
+  #    See AxpertConstants::BATTERY_TYPE
   #
   # Returns:
   #    # A Boolean indicating if the device battery type was set successfully
   #    true # Example
-  SET_BATTERY_TYPE = OP.new(command: lambda do |input|
-    "POP#{case input
-            when :agm
-              '00'
-            when :flooded
-              '01'
-            when :user
-              '02'
-            else
-              raise ::ArgumentError.new("Unexpected value #{input}, valid inputs: [:agm, :flooded, :user]")
-          end}"
-  end, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
+  SET_BATTERY_TYPE = OP.new(command: lambda { |i| "PBT#{CONS::BATTERY_TYPE.key(i).to_s.rjust(2, '0')}" }, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
 
   ##
   # Set device battery cut-off voltage
@@ -382,7 +419,7 @@ module AxpertCommands
   # Returns:
   #    # A Boolean indicating if the battery cut-off voltage was successfully set
   #    true # Example
-  SET_BATTERY_CUTOFF_VOLTAGE = OP.new(command: lambda { |input| "PSDV#{Float(input).to_s}" }, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
+  SET_BATTERY_CUTOFF_VOLTAGE = OP.new(command: lambda { |input| "PSDV#{Float(input).to_s.rjust(4, '0')}" }, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
 
   ##
   # Set device battery constant charging voltage
@@ -393,7 +430,7 @@ module AxpertCommands
   # Returns:
   #    # A Boolean indicating if the battery constant charging voltage was successfully set
   #    true # Example
-  SET_BATTERY_CONSTANT_CHARGING_VOLTAGE = OP.new(command: lambda { |input| "PCVV#{Float(input).to_s}" }, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
+  SET_BATTERY_CONSTANT_CHARGING_VOLTAGE = OP.new(command: lambda { |input| "PCVV#{Float(input).to_s.rjust(4, '0')}" }, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
 
   ##
   # Set device battery float charging voltage
@@ -404,49 +441,31 @@ module AxpertCommands
   # Returns:
   #    # A Boolean indicating if the battery float charging was successfully set
   #    true # Example
-  SET_BATTERY_FLOAT_CHARGING_VOLTAGE = OP.new(command: lambda { |input| "PBFT#{Float(input).to_s}" }, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
+  SET_BATTERY_FLOAT_CHARGING_VOLTAGE = OP.new(command: lambda { |input| "PBFT#{Float(input).to_s.rjust(4, '0')}" }, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
 
   ##
   # Set parallel PV OK condition
   #
   # Input:
-  #    :one # => Only one unit needs to report OK
-  #    :all # => All units must report OK
+  #    # A input symbol donating the PV Parallel OK condition mode setting
+  #    See AxpertConstants::PV_PARALLEL_OK_MODE
   #
   # Returns:
   #    # A Boolean indicating if the parallel PV OK condition was set successfully
   #    true # Example
-  SET_PARALLEL_PV_OK_CONDITION = OP.new(command: lambda do |input|
-    "PSPB#{case input
-            when :one
-              '0'
-            when :all
-              '1'
-            else
-              raise ::ArgumentError.new("Unexpected value #{input}, valid inputs: [:one, :all]")
-          end}"
-  end, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
+  SET_PV_PARALLEL_OK_MODE = OP.new(command: lambda { |i| "PPVOKC#{CONS::PV_PARALLEL_OK_MODE.key(i).to_s}" }, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
 
   ##
   # Set PV power balance mode
   #
   # Input:
-  #    :charge # => Charge current limited, solar will not draw more than is required to charge
-  #    :charge_and_load # =>  Charge current + load current, solar will draw enough for charge and load (up to max of solar)
+  #    # A input symbol donating the PV Power balance mode
+  #    See AxpertConstants::PV_POWER_BALANCE_MODE
   #
   # Returns:
   #    # A Boolean indicating if the PV power balance mode was set successfully
   #    true # Example
-  SET_PV_POWER_BALANCE = OP.new(command: lambda do |input|
-    "PSPB#{case input
-            when :charge
-              '0'
-            when :charge_and_load
-              '1'
-            else
-              raise ::ArgumentError.new("Unexpected value #{input}, valid inputs: [:charge, :charge_and_load]")
-          end}"
-  end, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
+  SET_PV_POWER_BALANCE_MODE = OP.new(command: lambda { |i| "PSPB#{CONS::PV_POWER_BALANCE_MODE.key(i).to_s}" }, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
 
   ##
   # Set the maximum charging current
@@ -463,7 +482,11 @@ module AxpertCommands
   #    true # Example
   SET_MAXIMUM_CHARGING_CURRENT = OP.new(command: lambda do |current, parallel_machine_number = 0|
     current = Integer(current)
-    "#{((current >= 100) ? 'MNCHGC' : 'MCHGC')}#{Integer(parallel_machine_number).to_s}#{current.to_s}"
+    if (current >= 100)
+      "MNCHGC#{Integer(parallel_machine_number).to_s}#{current.to_s.rjust(3, '0')}"
+    else
+      "MCHGC#{Integer(parallel_machine_number).to_s}#{current.to_s.rjust(2, '0')}"
+    end
   end, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
 
   #
@@ -480,19 +503,15 @@ module AxpertCommands
   #    # A Boolean indicating if the maximum charging current for utility was set successfully
   #    true # Example
   SET_MAXIMUM_UTILITY_CHARGING_CURRENT = OP.new(command: lambda do |current, parallel_machine_number = 0|
-    "MUCHGC#{Integer(parallel_machine_number).to_s}#{Integer(current).to_s}"
+    "MUCHGC#{Integer(parallel_machine_number).to_s}#{Integer(current).to_s.rjust(2, '0')}"
   end, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
 
   ##
   # Set the parallel output mode (or single mode)
   #
   # Input:
-  #    # (REQUIRED) Parameter 0 => mode - The input mode
-  #    :single # => Single device
-  #    :parallel # => Parallel device
-  #    :phase1 # => Phase 1 of 3
-  #    :phase2 # => Phase 2 of 3
-  #    :phase3 # => Phase 3 of 3
+  #    # (REQUIRED) Parameter 0 => A input symbol donating output mode
+  #    See AxpertConstants::OUTPUT_MODE
   #
   #    # (OPTIONAL) Parameter 1 => parallel_machine_number (Parallel mode only)
   #    5 # => Do not pass in this value unless the device is running in parallel mode
@@ -500,18 +519,25 @@ module AxpertCommands
   # Returns:
   #    # A Boolean indicating if the parallel output mode was set successfully
   #    true # Example
-  SET_PARALLEL_OUTPUT_MODE = OP.new(command: lambda do |mode, parallel_machine_number = 0|
-    "#{(:single == mode) ? 'POPM00' : "POPM#{Integer(parallel_machine_number).to_s}#{case mode
-            when :parallel
-              '1'
-            when :phase1
-              '2'
-            when :phase2
-              '3'
-            when :phase3
-              '4'
-            else
-              raise ::ArgumentError.new("Unexpected value #{mode}, valid inputs: [:single, :parallel, :phase1, :phase2, :phase3]")
-          end}"}"
+  SET_OUTPUT_MODE = OP.new(command: lambda do |mode, parallel_machine_number = 0|
+   "POPM#{CONS::OUTPUT_MODE.key(mode)}#{Integer(parallel_machine_number).to_s}"
   end, error_on_nak: false, parser: lambda { |r| (r.data == '(ACK') })
+
+  require 'axpert_constants'
+  CONS = ::AxpertConstants # :nodoc:
+  send(:remove_const, :OP)
+end
+
+# This is hacky but it is really a must for accurate parsing
+module ::Kernel # :nodoc:
+  def Boolean(input) # :nodoc:
+    return true if input.equal?(TrueClass)
+    return false if input.equal?(FalseClass)
+    parse = input.to_s.chomp.downcase
+    return true if ('true' == parse) || ('y' == parse) || ('t' == parse) || (1 == (Integer(parse) rescue nil))
+    return false if ('false' == parse) || ('n' == parse) || ('f' == parse) || (0 == (Integer(parse) rescue nil))
+    raise
+  rescue StandardError, ScriptError
+    raise ::ArgumentError.new("invalid value for Boolean(): \"#{input}\"")
+  end
 end

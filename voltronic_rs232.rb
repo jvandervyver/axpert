@@ -17,11 +17,11 @@ class VoltronicRS232
   attr_reader :bytes
 
   def initialize(data) #:nodoc:
-    data = data.to_s
-    parse_test = data.encode(::Encoding.find('ASCII'), {invalid: :replace, undef: :replace, replace: ''})
-    data = ((data == parse_test) ? data.chomp : data.chars[0..-4].join)
+    @data = data.to_s.chomp.dup.freeze
+    if (@data != @data.encode(::Encoding.find('ASCII'), {invalid: :replace, undef: :replace, replace: ''}))
+      raise ArgumentError.new("Input data can only be ASCII")
+    end
     @crc = calculate_crc(data.bytes.to_a).map { |b| b.chr }.join.freeze
-    @data = data.dup.freeze
     @bytes = "#{@data}#{@crc}\r".freeze
     self.freeze
   end
