@@ -1,5 +1,7 @@
 ##
-# A list of constants used by the Axpert devices
+# A list of constants used by the Axpert devices with a convenient parser
+#
+# @author: Johan van der Vyver
 module AxpertConstants
   def self.lookup_hash(type, values) # :nodoc:
     type = type.to_s.strip.freeze
@@ -16,7 +18,7 @@ module AxpertConstants
       end
     end
     lookup.instance_eval <<-RUBY_CODE
-      def key(input)
+      def key(input) # :nodoc: 
         parse = super(self[input]) rescue nil
         parse = (super(input.to_s.to_sym) rescue nil) if parse.nil?
         parse = (super(input) rescue nil) if parse.nil?

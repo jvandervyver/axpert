@@ -79,10 +79,10 @@ class VoltronicDeviceOperation
       raise NAKReceivedError.new("Received NAK from device, this usually means an error occured, an invalid value was supplied or the command is not supported")
     end
     @parser.yield(result)
-  #rescue ::StandardError, ::ScriptError => err
-  #  raise err if err.is_a?(NAKReceivedError)
-  #  err = "#{err.class.name.to_s} thrown; #{err.message.to_s}"
-  #  raise RS232ParseError.new("Could not parse the result, the output format may have changed (#{err})")
+  rescue ::StandardError, ::ScriptError => err
+    raise err if err.is_a?(NAKReceivedError)
+    err = "#{err.class.name.to_s} thrown; #{err.message.to_s}"
+    raise RS232ParseError.new("Could not parse the result, the output format may have changed (#{err})")
   end
 
   def to_s # :nodoc:
